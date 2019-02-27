@@ -1,0 +1,45 @@
+Sqoop安装部署
+下载
+wget http://archive.cloudera.com/cdh5/cdh/5/sqoop-1.4.6-cdh5.7.0.tar.gz
+
+解压重命名
+[root@hadoop001 software]# tar -xzvf sqoop-1.4.6-cdh5.7.0.tar.gz
+
+[root@hadoop001 software]# mv sqoop-1.4.6-cdh5.7.0/ sqoop
+mysqljdbc驱动包
+拷贝mysql的jdbc驱动包mysql-connector-java-5.1.45-bin.jar到sqoop/lib目录下
+
+[root@hadoop001 sqoop]# cd lib/
+[root@hadoop001 lib]# cp /opt/software/hive/lib/mysql-connector-java-5.1.45-bin.jar .
+配置环境变量
+[root@ hadoop001 sqoop]$ vi /etc/profile
+
+export SQOOP_HOME=/opt/software/sqoop 
+export PATH=$PATH:$SQOOP_HOME/bin
+sqoop-env.sh
+[root@hadoop001 conf]# mv sqoop-env-template.sh sqoop-env.sh 
+
+#Set path to where bin/hadoop is available
+export HADOOP_COMMON_HOME=/opt/software/hadoop
+
+#Set path to where hadoop-*-core.jar is available
+export HADOOP_MAPRED_HOME=/opt/software/hadoop
+
+#set the path to where bin/hbase is available
+#export HBASE_HOME=
+
+#Set the path to where bin/hive is available
+export HIVE_HOME=/opt/software/hive
+测试
+[root@hadoop001 conf]# sqoop version      
+Warning: /opt/software/sqoop/../hbase does not exist! HBase imports will fail.
+Please set $HBASE_HOME to the root of your HBase installation.
+Warning: /opt/software/sqoop/../hcatalog does not exist! HCatalog jobs will fail.
+Please set $HCAT_HOME to the root of your HCatalog installation.
+Warning: /opt/software/sqoop/../accumulo does not exist! Accumulo imports will fail.
+Please set $ACCUMULO_HOME to the root of your Accumulo installation.
+{"time":"2018-06-20 18:07:07,470","logtype":"INFO","loginfo":"org.apache.sqoop.Sqoop:Running Sqoop version: 1.4.6-cdh5.7.0"}
+Sqoop 1.4.6-cdh5.7.0
+git commit id 
+Compiled by jenkins on Wed Mar 23 11:30:51 PDT 2016
+警告是因为没有配置hbase，zookeeper，HCatalog
