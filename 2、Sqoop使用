@@ -1,0 +1,571 @@
+sqoop介绍
+Apache Sqoop是专为ApacheHadoop和结构化数据存储如关系数据库之间的数据转换工具的有效工具。你可以使用Sqoop从外部结构化数据存储的数据导入到Hadoop分布式文件系统或相关系统如Hive和HBase。相反，Sqoop可以用来从Hadoop的数据提取和导出到外部结构化数据存储如关系数据库和企业数据仓库。
+Sqoop专为大数据批量传输设计，能够分割数据集并创建Hadoop任务来处理每个区块。
+sqoop的安装和下载可参考该地址
+
+查看帮助命令sqoop help
+[root@hadoop lib]$ sqoop help
+usage: sqoop COMMAND [ARGS]
+
+Available commands:
+  codegen            Generate code to interact with database records
+  create-hive-table  Import a table definition into Hive
+  eval               Evaluate a SQL statement and display the results
+  export             Export an HDFS directory to a database table
+  help               List available commands
+  import             Import a table from a database to HDFS
+  import-all-tables  Import tables from a database to HDFS
+  import-mainframe   Import datasets from a mainframe server to HDFS
+  job                Work with saved jobs
+  list-databases     List available databases on a server
+  list-tables        List available tables in a database
+  merge              Merge results of incremental imports
+  metastore          Run a standalone Sqoop metastore
+  version            Display version information
+
+See 'sqoop help COMMAND' for information on a specific command.
+这里提示我们使用sqoop help command（要查询的命令）进行该命令的详细查询
+
+list-databases
+[root@hadoop001 lib]$ sqoop help list-databases]
+–connect jdbc:mysql://hostname:port/database指定mysql数据库主机名和端口号和数据库名(默认端口号为3306)
+
+–username : root 指定数据库用户名
+
+–password :123456 指定数据库密码
+
+[root@hadoop001 lib]$ sqoop list-databases \
+> --connect jdbc:mysql://localhost:3306 \
+> --username root \
+> --password 123456
+
+information_schema
+basic01
+mysql
+performance_schema
+sqoop
+test
+list-tables
+[root@hadoop001 lib]$ sqoop list-tables \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root \
+> --password 123456
+
+stu
+emp
+将mysql导入HDFS中(import)
+默认导入当前用户目录下/user/用户名/表名
+
+说到这里扩展一个小知识点：hdfs dfs -ls和hdfs dfs -ls \的区别。
+
+sqoop import --connect jdbc:mysql://localhost/database --username root --password 123456 --table example –m 1
+–table : example mysql中即将导出的表
+
+-m 1：指定启动一个map进程，如果表很大，可以启动多个map进程，默认是4个
+
+这里可能会出现两个错误，如下：
+
+第一个错误
+
+18/01/14 16:01:19 ERROR tool.ImportTool: Error during import: No primary key could be found for table stu. Please specify one with --split-by or perform a sequential import with '-m 1'
+提示可以看出，在我们从mysql中导出的表没有设定主键，提示我们使用把--split-by或者把参数-m设置为1，这里大家会不会问到，这是为什么呢？
+
+1、Sqoop通可以过–split-by指定切分的字段，–m设置mapper的数量。通过这两个参数分解生成m个where子句，进行分段查询。
+
+2、split-by 根据不同的参数类型有不同的切分方法，如表共有100条数据其中id为int类型，并且我们指定–split-by id，我们不设置map数量使用默认的为四个，首先Sqoop会取获取切分字段的MIN()和MAX()即（–split-by），再根据map数量进行划分，这是字段值就会分为四个map：（1-25）（26-50）（51-75）（75-100）。
+
+3、根据MIN和MAX不同的类型采用不同的切分方式支持有Date,Text,Float,Integer， Boolean,NText,BigDecimal等等。
+
+4、所以，若导入的表中没有主键，将-m设置称1或者设置split-by，即只有一个map运行，缺点是不能并行map录入数据。（注意，当-m 设置的值大于1时，split-by必须设置字段） 。
+
+5、split-by即便是int型，若不是连续有规律递增的话，各个map分配的数据是不均衡的，可能会有些map很忙，有些map几乎没有数据处理的情况。
+
+第二个错误
+
+Exception in thread "main" java.lang.NoClassDefFoundError: org/json/JSONObject
+        at org.apache.sqoop.util.SqoopJsonUtil.getJsonStringforMap(SqoopJsonUtil.java:42)
+        at org.apache.sqoop.SqoopOptions.writeProperties(SqoopOptions.java:742)
+        at org.apache.sqoop.mapreduce.JobBase.putSqoopOptionsToConfiguration(JobBase.java:369)
+        at org.apache.sqoop.mapreduce.JobBase.createJob(JobBase.java:355)
+        at org.apache.sqoop.mapreduce.ImportJobBase.runImport(ImportJobBase.java:249)
+        at org.apache.sqoop.manager.SqlManager.importTable(SqlManager.java:692)
+        at org.apache.sqoop.manager.MySQLManager.importTable(MySQLManager.java:118)
+        at org.apache.sqoop.tool.ImportTool.importTable(ImportTool.java:497)
+        at org.apache.sqoop.tool.ImportTool.run(ImportTool.java:605)
+        at org.apache.sqoop.Sqoop.run(Sqoop.java:143)
+        at org.apache.hadoop.util.ToolRunner.run(ToolRunner.java:70)
+        at org.apache.sqoop.Sqoop.runSqoop(Sqoop.java:179)
+        at org.apache.sqoop.Sqoop.runTool(Sqoop.java:218)
+        at org.apache.sqoop.Sqoop.runTool(Sqoop.java:227)
+        at org.apache.sqoop.Sqoop.main(Sqoop.java:236)
+Caused by: java.lang.ClassNotFoundException: org.json.JSONObject
+        at java.net.URLClassLoader.findClass(URLClassLoader.java:381)
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:424)
+        at sun.misc.Launcher$AppClassLoader.loadClass(Launcher.java:331)
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:357)
+        ... 15 more
+这里我们需要导入java-json.jar包，下载地址，把java-json.jar添加到../sqoop/lib目录
+
+[root@hadoop001 lib]$ sqoop import --connect jdbc:mysql://localhost:3306/sqoop --username root --password 123456 --table stu
+
+
+[root@hadoop001 lib]$ hdfs dfs -ls /user/hadoop/stu
+Found 4 items
+-rw-r--r--   1 hadoop supergroup          0 2018-01-14 17:07 /user/hadoop/stu/_SUCCESS
+-rw-r--r--   1 hadoop supergroup         11 2018-01-14 17:07 /user/hadoop/stu/part-m-00000
+-rw-r--r--   1 hadoop supergroup          7 2018-01-14 17:07 /user/hadoop/stu/part-m-00001
+-rw-r--r--   1 hadoop supergroup          9 2018-01-14 17:07 /user/hadoop/stu/part-m-00002
+[root@hadoop001 lib]$ hdfs dfs -cat /user/hadoop/stu/"part*"
+1,zhangsan
+2,lisi
+3,wangwu
+加上参数m
+
+[root@hadoop001 lib]$ sqoop import --connect jdbc:mysql://localhost:3306/sqoop --username root --password 123456 --table stu -m 1
+这里大家可能也会出现一个错误，在hdfs上已经存，错误如下：
+
+18/01/14 17:52:47 ERROR tool.ImportTool: Encountered IOException running import job: org.apache.hadoop.mapred.FileAlreadyExistsException: Output directory hdfs://192.168.137.200:9000/user/hadoop/stu already exists
+        at org.apache.hadoop.mapreduce.lib.output.FileOutputFormat.checkOutputSpecs(FileOutputFormat.java:146)
+        at org.apache.hadoop.mapreduce.JobSubmitter.checkSpecs(JobSubmitter.java:270)
+        at org.apache.hadoop.mapreduce.JobSubmitter.submitJobInternal(JobSubmitter.java:143)
+        at org.apache.hadoop.mapreduce.Job$10.run(Job.java:1307)
+        at org.apache.hadoop.mapreduce.Job$10.run(Job.java:1304)
+        at java.security.AccessController.doPrivileged(Native Method)
+        at javax.security.auth.Subject.doAs(Subject.java:422)
+        at org.apache.hadoop.security.UserGroupInformation.doAs(UserGroupInformation.java:1693)
+        at org.apache.hadoop.mapreduce.Job.submit(Job.java:1304)
+        at org.apache.hadoop.mapreduce.Job.waitForCompletion(Job.java:1325)
+        at org.apache.sqoop.mapreduce.ImportJobBase.doSubmitJob(ImportJobBase.java:196)
+        at org.apache.sqoop.mapreduce.ImportJobBase.runJob(ImportJobBase.java:169)
+        at org.apache.sqoop.mapreduce.ImportJobBase.runImport(ImportJobBase.java:266)
+        at org.apache.sqoop.manager.SqlManager.importTable(SqlManager.java:692)
+        at org.apache.sqoop.manager.MySQLManager.importTable(MySQLManager.java:118)
+        at org.apache.sqoop.tool.ImportTool.importTable(ImportTool.java:497)
+        at org.apache.sqoop.tool.ImportTool.run(ImportTool.java:605)
+        at org.apache.sqoop.Sqoop.run(Sqoop.java:143)
+        at org.apache.hadoop.util.ToolRunner.run(ToolRunner.java:70)
+        at org.apache.sqoop.Sqoop.runSqoop(Sqoop.java:179)
+        at org.apache.sqoop.Sqoop.runTool(Sqoop.java:218)
+        at org.apache.sqoop.Sqoop.runTool(Sqoop.java:227)
+        at org.apache.sqoop.Sqoop.main(Sqoop.java:236)
+删除目标目录后在导入,并且指定mapreduce的job的名字
+
+参数：–delete-target-dir –mapreduce-job-name
+
+[root@hadoop001 lib]$ sqoop import \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root --password 123456 \
+> --mapreduce-job-name FromMySQL2HDFS \
+> --delete-target-dir \
+> --table stu \
+> -m 1
+导入到指定目录
+
+参数：–target-dir /directory
+
+[root@hadoop001 lib]$ sqoop import --connect jdbc:mysql://localhost:3306/sqoop --username root -password 123456 --table stu -m 1 --target-dir /sqoop/
+
+
+[root@hadoop001 lib]$ hdfs dfs -ls /sqoop
+Found 2 items
+-rw-r--r--   1 hadoop supergroup          0 2018-01-14 18:07 /sqoop/_SUCCESS
+-rw-r--r--   1 hadoop supergroup         27 2018-01-14 18:07 /sqoop/part-m-00000
+[root@hadoop001 lib]$ hdfs dfs -cat /sqoop/part-m-00000
+1,zhangsan
+2,lisi
+3,wangwu
+指定字段之间的分隔符
+
+参数：–fields-terminated-by
+
+[root@hadoop001 lib]$ sqoop import \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root --password 123456 \
+> --table stu \
+> --mapreduce-job-name FromMySQL2HDFS \
+> --delete-target-dir \
+> --fields-terminated-by '\t' \
+> -m 1 
+
+
+[root@hadoop001 lib]$ hdfs dfs -ls /user/hadoop/stu/ 
+Found 2 items
+-rw-r--r--   1 hadoop supergroup          0 2018-01-14 19:47 /user/hadoop/stu/_SUCCESS
+-rw-r--r--   1 hadoop supergroup         27 2018-01-14 19:47 /user/hadoop/stu/part-m-0000 
+
+[root@hadoop001 lib]$ hdfs dfs -cat /user/hadoop/stu/part-m-00000   
+1       zhangsan
+2       lisi
+3       wangwu
+（字段之间变为空格）
+如果表中的字段为null转化为0
+
+参数：–null-non-string
+
+–null-string含义是 string类型的字段，当Value是NULL，替换成指定的字符
+
+–null-non-string 含义是非string类型的字段，当Value是NULL，替换成指定字符先
+
+导入薪资表
+
+[root@hadoop001 lib]$ sqoop import \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root --password 123456 \
+> --table sal \
+> --mapreduce-job-name FromMySQL2HDFS \
+> --delete-target-dir \
+> --fields-terminated-by '\t' \
+> -m 1
+
+
+[root@hadoop001 lib]$  hdfs dfs -cat /user/hadoop/sal/part-m-00000
+zhangsan        1000
+lisi    2000
+wangwu  null
+加上参数`–null-string
+
+[root@hadoop001 lib]$ sqoop import \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root --password 123456 \
+> --table sal \
+> --mapreduce-job-name FromMySQL2HDFS \
+> --delete-target-dir \
+> --fields-terminated-by '\t' \
+> -m 1 \
+> --null-string 0
+
+
+[root@hadoop001 lib]$  hdfs dfs -cat /user/hadoop/sal/part-m-00000
+zhangsan        1000
+lisi    2000
+wangwu  0
+导入表中的部分字段
+
+参数：–columns
+
+[root@hadoop001 ~]$ sqoop import \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root --password 123456 \
+> --table stu \
+> --mapreduce-job-name FromMySQL2HDFS \
+> --delete-target-dir \
+> --fields-terminated-by '\t' \
+> -m 1 \
+> --null-string 0 \
+> --columns "name" 
+
+
+[root@hadoop001 ~]$ hdfs dfs -cat /user/hadoop/stu/part-m-00000
+zhangsan
+lisi
+wangwu
+按条件导入数据
+
+参数：–where
+
+[root@hadoop001 ~]$ sqoop import \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root --password 123456 \
+> --table stu \
+> --mapreduce-job-name FromMySQL2HDFS \
+> --delete-target-dir \
+> --fields-terminated-by '\t' \
+> -m 1 \
+> --null-string 0 \
+> --columns "name" \
+> --target-dir STU_COLUMN_WHERE \
+> --where 'id<3'
+
+
+zhangsan
+lisi
+按照sql语句进行导入
+
+参数：–query
+
+使用–query关键字，就不能使用–table和–columns
+
+自定义sql语句的where条件中必须包含字符串 $CONDITIONS，$CONDITIONS是一个变量，用于给多个map任务划分任务范 围；
+
+sqoop import \
+--connect jdbc:mysql://localhost:3306/sqoop \
+--username root --password 123456 \
+--mapreduce-job-name FromMySQL2HDFS \
+--delete-target-dir \
+--fields-terminated-by '\t' \
+-m 1 \
+--null-string 0 \
+--target-dir STU_COLUMN_QUERY \
+--query "select * from stu where id>1 and \$CONDITIONS"
+
+（或者quer使用这种格式：--query 'select * from emp where id>1 and $CONDITIONS'）                                           
+
+
+2       lisi
+3       wangwu
+在文件中执行
+创建文件sqoop-import-hdfs.txt
+
+[root@hadoop001 data]$ vi sqoop-import-hdfs.txt                                   
+import
+--connect
+jdbc:mysql://localhost:3306/sqoop
+--username
+root
+--password
+123456
+--table
+stu
+--target-dir 
+STU_option_file
+执行
+
+[root@hadoop001 data]$ sqoop --option-file /home/hadoop/data/sqoop-import-hdfs.txt
+
+[root@hadoop001 data]$ hdfs dfs -cat STU_option_file/"part*"
+1,zhangsan
+2,lisi
+3,wangwu
+eval
+查看帮助命令对与该命令的解释为： Evaluate a SQL statement and display the results，也就是说执行一个SQL语句并查询出结果。
+
+[root@hadoop001 data]$ sqoop eval \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root --password 123456 \
+> --query "select * from stu" 
+Warning: /opt/software/sqoop/../hbase does not exist! HBase imports will fail.
+Please set $HBASE_HOME to the root of your HBase installation.
+Warning: /opt/software/sqoop/../hcatalog does not exist! HCatalog jobs will fail.
+Please set $HCAT_HOME to the root of your HCatalog installation.
+Warning: /opt/software/sqoop/../accumulo does not exist! Accumulo imports will fail.
+Please set $ACCUMULO_HOME to the root of your Accumulo installation.
+Warning: /opt/software/sqoop/../zookeeper does not exist! Accumulo imports will fail.
+Please set $ZOOKEEPER_HOME to the root of your Zookeeper installation.
+18/01/14 21:35:25 INFO sqoop.Sqoop: Running Sqoop version: 1.4.6-cdh5.7.0
+18/01/14 21:35:25 WARN tool.BaseSqoopTool: Setting your password on the command-line is insecure. Consider using -P instead.
+18/01/14 21:35:26 INFO manager.MySQLManager: Preparing to use a MySQL streaming resultset.
+--------------------------------------
+| id          | name                 | 
+--------------------------------------
+| 1           | zhangsan             | 
+| 2           | lisi                 | 
+| 3           | wangwu               | 
+--------------------------------------
+HDFS数据导出到MySQL（Hive中的数据导入到MySQL）
+导出HDFS上的sal数据，查询数据：
+
+[root@hadoop001 data]$ hdfs dfs -cat sal/part-m-00000
+zhangsan        1000
+lisi    2000
+wangwu  0
+在执行导出语句前先创建sal_demo表（不创建表会报错）
+
+mysql> create table sal_demo like sal;
+导出语句
+
+[root@hadoop001 data]$ sqoop export \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root \
+> --password 123456 \
+> --table sal_demo \
+> --input-fields-terminated-by '\t'\
+> --export-dir /user/hadoop/sal/
+–table sal_demo ：指定导出表的名称；
+
+–input-fields-terminated-by：可以用来指定hdfs上文件的分隔符，默认是逗号（查询数据室可以看出我是用的是\t，所以这里指定为\t ，这里大家小心可能因为分隔符的原因报错）
+
+–export-dir ：导出数据的目录。
+
+结果
+
+mysql> select * from sal_demo;
++----------+--------+
+| name     | salary |
++----------+--------+
+| zhangsan | 1000   |
+| lisi     | 2000   |
+| wangwu   | 0      |
++----------+--------+
+3 rows in set (0.00 sec)
+(如果再导入一次会追加在表中)
+
+插入中文乱码问题
+
+sqoop export --connect "jdbc:mysql://localhost:3306/test?useUnicode=true&characterEncoding=utf-8" --username root --password 123456 --table sal -m 1 --export-dir /user/hadoop/sal/
+指定导出的字段
+
+--columns <col,col,col...>
+[root@hadoop001 data]$ sqoop export \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root \
+> --password 123456 \
+> --table sal_demo3 \
+> --input-fields-terminated-by '\t' \
+> --export-dir /user/hadoop/sal/ \
+> --columns name
+查询结果
+
+mysql> select * from sal_demo3  
+    -> ;
++----------+--------+
+| name     | salary |
++----------+--------+
+| zhangsan | NULL   |
+| lisi     | NULL   |
+| wangwu   | NULL   |
++----------+--------+
+3 rows in set (0.00 sec)
+MySQL的中的数据导入到Hive中
+[root@hadoop001 ~]$ sqoop import \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root --password 123456 \
+> --table stu \
+> --create-hive-table \
+> --hive-database hive \
+> --hive-import \
+> --hive-overwrite \
+> --hive-table stu_import \
+> --mapreduce-job-name FromMySQL2HDFS \
+> --delete-target-dir \
+> --fields-terminated-by '\t' \
+> -m 1 \
+> --null-non-string 0
+–create-hive-table ：创建目标表，如果有会报错；
+
+–hive-database：指定hive数据库；
+
+–hive-import ：指定导入hive（没有这个条件导入到hdfs中）；
+
+–hive-overwrite ：覆盖；
+
+–hive-table stu_import :指定hive中表的名字，如果不指定使用导入的表的表名。
+
+这里可能会报错，错误如下：
+
+18/01/15 01:29:28 ERROR hive.HiveConfig: Could not load org.apache.hadoop.hive.conf.HiveConf. Make sure HIVE_CONF_DIR is set correctly.
+18/01/15 01:29:28 ERROR tool.ImportTool: Encountered IOException running import job: java.io.IOException: java.lang.ClassNotFoundException: org.apache.hadoop.hive.conf.HiveConf
+        at org.apache.sqoop.hive.HiveConfig.getHiveConf(HiveConfig.java:50)
+        at org.apache.sqoop.hive.HiveImport.getHiveArgs(HiveImport.java:392)
+        at org.apache.sqoop.hive.HiveImport.executeExternalHiveScript(HiveImport.java:379)
+        at org.apache.sqoop.hive.HiveImport.executeScript(HiveImport.java:337)
+        at org.apache.sqoop.hive.HiveImport.importTable(HiveImport.java:241)
+        at org.apache.sqoop.tool.ImportTool.importTable(ImportTool.java:514)
+        at org.apache.sqoop.tool.ImportTool.run(ImportTool.java:605)
+        at org.apache.sqoop.Sqoop.run(Sqoop.java:143)
+        at org.apache.hadoop.util.ToolRunner.run(ToolRunner.java:70)
+        at org.apache.sqoop.Sqoop.runSqoop(Sqoop.java:179)
+        at org.apache.sqoop.Sqoop.runTool(Sqoop.java:218)
+        at org.apache.sqoop.Sqoop.runTool(Sqoop.java:227)
+        at org.apache.sqoop.Sqoop.main(Sqoop.java:236)
+Caused by: java.lang.ClassNotFoundException: org.apache.hadoop.hive.conf.HiveConf
+        at java.net.URLClassLoader.findClass(URLClassLoader.java:381)
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:424)
+        at sun.misc.Launcher$AppClassLoader.loadClass(Launcher.java:331)
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:357)
+        at java.lang.Class.forName0(Native Method)
+        at java.lang.Class.forName(Class.java:264)
+        at org.apache.sqoop.hive.HiveConfig.getHiveConf(HiveConfig.java:44)
+        ... 12 more
+网上找的资料基本都在说配置个人环境变量，并没有卵用，到hive目录的lib下拷贝几个jar包，问题就解决了！
+
+[root@hadoop001 lib]$ cp hive-common-1.1.0-cdh5.7.0.jar /opt/software/sqoop/lib/
+[root@hadoop001 lib]$ cd hive-shims* /opt/software/sqoop/lib/
+查看hive中导入的数据
+
+hive> show tables;
+OK
+stu_import
+Time taken: 0.067 seconds, Fetched: 1 row(s)
+hive> select * from emp_import
+    > ;
+OK
+1       zhangsan
+2       lisiw 
+3       wangwu
+导入Hive不建议大家使用–create-hive-table,建议事先创建好hive表
+
+使用create创建表后，我们可以查看字段对应的类型，发现有些并不是我们想要的类型，所以我们要事先创建好表的结构再导入数据。
+
+导入到hive指定分区
+
+–hive-partition-key Sets the partition key
+to use when importing
+to hive
+–hive-partition-value Sets the partition
+value to use when
+importing to hive
+
+示例
+
+[root@hadoop001 lib]$ sqoop import \
+> --connect jdbc:mysql://localhost:3306/sqoop \
+> --username root --password 123456 \
+> --table stu \
+> --create-hive-table \
+> --hive-database hive \
+> --hive-import \
+> --hive-overwrite \
+> --hive-table stu_import1 \
+> --mapreduce-job-name FromMySQL2HDFS \
+> --delete-target-dir \
+> --fields-terminated-by '\t' \
+> -m 1 \
+> --null-non-string 0 \
+> --hive-partition-key dt \
+> --hive-partition-value "2018-08-08"
+hive上查询
+
+hive> select * from stu_import1;
+OK
+1       zhangsan        2018-08-08
+2       lisi    2018-08-08
+3       wangwu  2018-08-08
+Time taken: 0.121 seconds, Fetched: 3 row(s)
+sqoop job的使用
+就是把sqoop执行的语句变成一个job，并不是在创建语句的时候执行，你可以查看该job，可以任何时候执行该job，也可以删除job，这样就方便我们进行任务的调度
+
+–create 创建一个新的job
+
+–delete 删除job
+
+–exec 执行job
+
+–show 显示job的参数
+
+–list 列出所有的job
+
+创建一个job
+
+sqoop job --create person_job1 -- import --connect jdbc:mysql://localhost:3306/sqoop \
+--username root \
+--password 123456 \
+--table sal_demo3 \
+-m 1 \
+--delete-target-dir 
+查看可用的job
+
+[root@hadoop001 lib]$ sqoop job --list
+Available jobs:
+  person_job1
+执行person_job完成导入
+
+[root@hadoop001 lib]$ sqoop job --exec person_job1
+
+[root@hadoop001 lib]$ hdfs dfs -ls
+Found 6 items
+drwxr-xr-x   - hadoop supergroup          0 2018-01-14 20:40 EMP_COLUMN_WHERE
+drwxr-xr-x   - hadoop supergroup          0 2018-01-14 20:49 STU_COLUMN_QUERY
+drwxr-xr-x   - hadoop supergroup          0 2018-01-14 20:45 STU_COLUMN_WHERE
+drwxr-xr-x   - hadoop supergroup          0 2018-01-14 21:10 STU_option_file
+drwxr-xr-x   - hadoop supergroup          0 2018-01-14 20:24 sal
+drwxr-xr-x   - hadoop supergroup          0 2018-01-15 03:08 sal_demo3
+问题：执行person_job的时候，需要输入数据库的密码，怎么样能不输入密码呢？
+
+配置sqoop-site.xml
+
+<property>
+    <name>sqoop.metastore.client.record.password</name>
+    <value>true</value>
+    <description>If true, allow saved passwords in the metastore.
+    </description>
+</property> 
